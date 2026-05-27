@@ -1,7 +1,6 @@
 import json
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
 
 from .utils.sitemap import fetch_sitemap
 from .utils.categorizer import categorize_urls
@@ -10,9 +9,17 @@ from .utils.graph_builder import build_graph_data
 from .utils.html_generator import generate_html
 
 
+def cors_response(response):
+    response['Access-Control-Allow-Origin'] = '*'
+    response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    response['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+
 @csrf_exempt
-@require_http_methods(['POST'])
 def generate_view(request):
+    if request.method == 'OPTIONS':
+        return cors_response(HttpResponse())
     try:
         body = json.loads(request.body)
         sitemap_url = body.get('sitemap_url', '').strip()
@@ -23,17 +30,17 @@ def generate_view(request):
         return JsonResponse({'error': 'sitemap_url is required.'}, status=400)
 
     if not sitemap_url.startswith('http'):
-        return JsonResponse({'error': 'sitemap_url must start with http or https.'}, status=400)
+        return cors_response(JsonResponse({'error': 'sitemap_url must start with http or https.'}, status=400))
 
     try:
         urls = fetch_sitemap(sitemap_url)
         if not urls:
-            return JsonResponse({'error': 'No URLs found in sitemap. Check the URL and try again.'}, status=400)
+            return cors_response(JsonResponse({'error': 'No URLs found in sitemap. Check the URL and try again.'}, status=400))
 
         categorized = categorize_urls(urls)
         total_categorized = sum(len(v) for v in categorized.values())
         if total_categorized == 0:
-            return JsonResponse({'error': 'No blog, feature, compare, or solution pages found in sitemap.'}, status=400)
+            return cors_response(JsonResponse({'error': 'No blog, feature, compare, or solution pages found in sitemap.'}, status=400))
 
         links  = extract_all_links(categorized)
         graph  = build_graph_data(categorized, links)
@@ -48,12 +55,11 @@ def generate_view(request):
             'solutions':   len(categorized.get('solutions', [])),
         }
 
-        return JsonResponse({'html': html, 'stats': stats})
+        return cors_response(JsonResponse({'html': html, 'stats': stats}))
 
     except Exception as e:
-        return JsonResponse({'error': f'Something went wrong: {str(e)}'}, status=500)
+        return cors_response(JsonResponse({'error': f'Something went wrong: {str(e)}'}, status=500))
 
 
-@require_http_methods(['GET'])
 def health_view(request):
-    return JsonResponse({'status': 'ok'})
+    return cors_response(JsonResponse({'status': 'ok'}))
