@@ -1,0 +1,6 @@
+django>=4.2
+requests
+beautifulsoup4
+lxml
+django-cors-headers
+gunicorn

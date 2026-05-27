@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recharm Internal Link Graph — Full Site</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 16px 20px 24px; background: #f9f9f7; color: #1a1a18; }
+
+  h1 { font-size: 17px; font-weight: 500; margin: 0 0 3px; }
+  .subtitle { font-size: 12px; color: #73726c; margin: 0 0 12px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-bottom: 10px; font-size: 11px; color: #5f5e5a; align-items: center; }
+  .legend-section { margin-left: 10px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 3px; flex-shrink: 0; vertical-align: middle; }
+  .sq  { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 3px; flex-shrink: 0; vertical-align: middle; }
+
+  .stats { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .stat { background: #f1efe8; border-radius: 8px; padding: 5px 13px; font-size: 11px; color: #5f5e5a; text-align: center; }
+  .stat b { font-size: 17px; font-weight: 500; color: #1a1a18; display: block; }
+  .stat b.warn { color: #D85A30; }
+
+  .controls { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+  .controls label { font-size: 11px; color: #5f5e5a; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .controls input[type=checkbox] { cursor: pointer; }
+  .controls button { font-size: 11px; padding: 4px 10px; border: 0.5px solid #d3d1c7; border-radius: 6px; background: #fff; cursor: pointer; color: #444; }
+  .controls button:hover { background: #f1efe8; }
+
+  #wrapper { position: relative; }
+  #tt {
+    position: absolute; pointer-events: none; display: none;
+    background: #fff; border: 0.5px solid #d3d1c7; border-radius: 8px;
+    padding: 9px 11px; font-size: 11px; color: #1a1a18;
+    max-width: 250px; z-index: 30; line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  svg { display: block; border: 0.5px solid #d3d1c7; border-radius: 10px; background: #fff; }
+  .hint { font-size: 10px; color: #888780; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+
+<h1>Recharm — Internal Link Graph (Full Site)</h1>
+<p class="subtitle">29 blog posts + 16 feature/compare/solution pages · arrows show link direction</p>
+
+<div class="legend">
+  <span style="font-weight:500;color:#1a1a18;font-size:11px">Blogs</span>
+  <span><span class="dot" style="background:#1D9E75"></span>DAM / Asset mgmt</span>
+  <span><span class="dot" style="background:#7F77DD"></span>Creative ops</span>
+  <span><span class="dot" style="background:#BA7517"></span>Ad strategy</span>
+  <span><span class="dot" style="background:#D85A30"></span>Competitors</span>
+  <span><span class="dot" style="background:#639922"></span>UGC / Influencer</span>
+  <span><span class="dot" style="background:#888780"></span>Misc</span>
+  <span class="legend-section" style="font-weight:500;color:#1a1a18;font-size:11px">Site pages</span>
+  <span><span class="sq" style="background:#378ADD"></span>Features</span>
+  <span><span class="sq" style="background:#E24B4A"></span>Compare</span>
+  <span><span class="sq" style="background:#9B59B6"></span>Solutions</span>
+</div>
+
+<div class="stats">
+  <div class="stat"><b>45</b>Total nodes</div>
+  <div class="stat"><b>63</b>Total links</div>
+  <div class="stat"><b>24</b>Blog → site page</div>
+  <div class="stat"><b class="warn">2</b>Orphan blogs</div>
+  <div class="stat"><b id="hub-lbl" style="font-size:13px">—</b>Top hub</div>
+</div>
+
+<div class="controls">
+  <label><input type="checkbox" id="chk-blogs" checked> Blogs</label>
+  <label><input type="checkbox" id="chk-features" checked> Features</label>
+  <label><input type="checkbox" id="chk-compare" checked> Compare</label>
+  <label><input type="checkbox" id="chk-solutions" checked> Solutions</label>
+  <button onclick="resetZoom()">Reset zoom</button>
+  <button onclick="reheat()">Reorganise</button>
+</div>
+
+<div id="wrapper">
+  <div id="tt"></div>
+  <svg id="g" width="100%" height="720"></svg>
+</div>
+<p class="hint">Scroll to zoom · Drag canvas to pan · Drag nodes to reposition · Hover for details · Circles = blogs · Squares = site pages</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+const BLOG_CATS = { dam:'#1D9E75', creops:'#7F77DD', adstrategy:'#BA7517', competitor:'#D85A30', ugc:'#639922', misc:'#888780' };
+const PAGE_CATS = { features:'#378ADD', compare:'#E24B4A', solutions:'#9B59B6' };
+
+// ── Node data ──────────────────────────────────────────────────────────────
+const nodesData = [
+  // Blogs
+  { id:'blog-digital-asset-management-integration',                     label:'DAM Integration',        cat:'dam',        type:'blog' },
+  { id:'8-reasons-your-creative-brief-process-is-slowing-down-ad-production', label:'8 Brief Bottlenecks', cat:'adstrategy',  type:'blog' },
+  { id:'metadata-tagging',                                              label:'Metadata Tagging',       cat:'dam',        type:'blog' },
+  { id:'best-dam-fashion-apparel',                                      label:'DAM for Fashion',        cat:'dam',        type:'blog' },
+  { id:'how-to-make-elevenlabs-sound-human-in-2026',                    label:'ElevenLabs Guide',       cat:'misc',       type:'blog' },
+  { id:'bynder-alternatives',                                           label:'Bynder Alternatives',    cat:'competitor', type:'blog' },
+  { id:'frame-io-alternatives',                                         label:'Frame.io Alternatives',  cat:'competitor', type:'blog' },
+  { id:'digital-asset-management-benefits',                             label:'DAM Benefits',           cat:'dam',        type:'blog' },
+  { id:'digital-asset-management-features',                             label:'DAM Features',           cat:'dam',        type:'blog' },
+  { id:'digital-asset-management-agencies',                             label:'DAM for Agencies',       cat:'dam',        type:'blog' },
+  { id:'air-pricing-model-problems-dtc-brands',                         label:'Air Pricing Issues',     cat:'competitor', type:'blog' },
+  { id:'how-to-scale-online-advertising',                               label:'Scale Online Ads',       cat:'creops',     type:'blog' },
+  { id:'best-dam-software-for-video',                                   label:'Best DAM for Video',     cat:'dam',        type:'blog' },
+  { id:'best-creative-operations-tools',                                label:'Best CreOps Tools',      cat:'creops',     type:'blog' },
+  { id:'creative-operations',                                           label:'Creative Operations',    cat:'creops',     type:'blog' },
+  { id:'competitors-air-inc',                                           label:'Air.inc Competitors',    cat:'competitor', type:'blog' },
+  { id:'video-asset-management',                                        label:'Video Asset Mgmt',       cat:'dam',        type:'blog' },
+  { id:'6-steps-to-bringing-paid-creative-in-house',                    label:'Paid Creative In-House', cat:'creops',     type:'blog' },
+  { id:'6-things-your-influencer-brief-should-always-have',             label:'Influencer Brief',       cat:'ugc',        type:'blog' },
+  { id:'12-must-have-dam-features-for-video-ad-production',             label:'12 DAM Features',        cat:'dam',        type:'blog' },
+  { id:'why-recharm-is-better-than-air-for-ad-creative-teams',          label:'Recharm vs Air',         cat:'competitor', type:'blog' },
+  { id:'what-is-andromeda-and-creative-similarity',                     label:'What Is Andromeda',      cat:'adstrategy', type:'blog' },
+  { id:'3-types-of-early-holiday-shoppers-how-to-sell-to-them',         label:'Holiday Shoppers',       cat:'misc',       type:'blog' },
+  { id:'the-creative-strategist-hiring-playbook-12-interview-questions', label:'Strategist Hiring',     cat:'creops',     type:'blog' },
+  { id:'7-organize-videos-for-great-ads',                               label:'Organize Videos',        cat:'adstrategy', type:'blog' },
+  { id:'successful-ad-creative-team',                                   label:'Successful Ad Team',     cat:'creops',     type:'blog' },
+  { id:'2-1-winning-ads-are-a-perishable-opportunity',                  label:'Winning Ads',            cat:'adstrategy', type:'blog' },
+  { id:'3-reasons-why-hook-iterations-video-ads',                       label:'Hook Iterations',        cat:'adstrategy', type:'blog' },
+  { id:'5-tips-to-shoot-ugc-videos',                                    label:'UGC Tips',               cat:'ugc',        type:'blog' },
+
+  // Features
+  { id:'/features/footage-organization', label:'Footage Org.',     cat:'features',  type:'page' },
+  { id:'/features/visual-search',        label:'Visual Search',    cat:'features',  type:'page' },
+  { id:'/features/ai-tagging',           label:'AI Tagging',       cat:'features',  type:'page' },
+  { id:'/features/image-tagging',        label:'Image Tagging',    cat:'features',  type:'page' },
+  { id:'/features/creator-tagging',      label:'Creator Tagging',  cat:'features',  type:'page' },
+  { id:'/features/usage-rights',         label:'Usage Rights',     cat:'features',  type:'page' },
+  // Compare
+  { id:'/compare/dropbox-alternative',       label:'vs Dropbox',   cat:'compare',  type:'page' },
+  { id:'/compare/canto-alternative',         label:'vs Canto',     cat:'compare',  type:'page' },
+  { id:'/compare/uplifted-alternative',      label:'vs Uplifted',  cat:'compare',  type:'page' },
+  { id:'/compare/google-drive-alternative',  label:'vs Google Drive', cat:'compare', type:'page' },
+  { id:'/compare/air-alternative',           label:'vs Air',       cat:'compare',  type:'page' },
+  // Solutions
+  { id:'/solutions/creative-brief-workflow',        label:'Brief Workflow',    cat:'solutions', type:'page' },
+  { id:'/solutions/beat-meta-andromeda',            label:'Beat Andromeda',    cat:'solutions', type:'page' },
+  { id:'/solutions/hire-video-editors-by-trials',   label:'Hire by Trials',    cat:'solutions', type:'page' },
+  { id:'/solutions/onboard-video-editors-instantly',label:'Onboard Editors',   cat:'solutions', type:'page' },
+  { id:'/solutions/empower-video-editors',          label:'Empower Editors',   cat:'solutions', type:'page' },
+];
+
+// ── Link data ──────────────────────────────────────────────────────────────
+const linksData = [
+  // Blog → blog (39 original)
+  { source:'12-must-have-dam-features-for-video-ad-production', target:'6-things-your-influencer-brief-should-always-have' },
+  { source:'12-must-have-dam-features-for-video-ad-production', target:'best-dam-software-for-video' },
+  { source:'12-must-have-dam-features-for-video-ad-production', target:'successful-ad-creative-team' },
+  { source:'2-1-winning-ads-are-a-perishable-opportunity',      target:'3-types-of-early-holiday-shoppers-how-to-sell-to-them' },
+  { source:'3-reasons-why-hook-iterations-video-ads',           target:'2-1-winning-ads-are-a-perishable-opportunity' },
+  { source:'6-steps-to-bringing-paid-creative-in-house',        target:'3-reasons-why-hook-iterations-video-ads' },
+  { source:'6-steps-to-bringing-paid-creative-in-house',        target:'7-organize-videos-for-great-ads' },
+  { source:'6-steps-to-bringing-paid-creative-in-house',        target:'the-creative-strategist-hiring-playbook-12-interview-questions' },
+  { source:'6-things-your-influencer-brief-should-always-have', target:'5-tips-to-shoot-ugc-videos' },
+  { source:'7-organize-videos-for-great-ads',                   target:'how-to-scale-online-advertising' },
+  { source:'8-reasons-your-creative-brief-process-is-slowing-down-ad-production', target:'best-creative-operations-tools' },
+  { source:'best-creative-operations-tools',  target:'digital-asset-management-agencies' },
+  { source:'best-creative-operations-tools',  target:'frame-io-alternatives' },
+  { source:'best-creative-operations-tools',  target:'how-to-scale-online-advertising' },
+  { source:'best-dam-fashion-apparel',        target:'best-dam-software-for-video' },
+  { source:'best-dam-fashion-apparel',        target:'creative-operations' },
+  { source:'best-dam-software-for-video',     target:'bynder-alternatives' },
+  { source:'best-dam-software-for-video',     target:'digital-asset-management-benefits' },
+  { source:'best-dam-software-for-video',     target:'digital-asset-management-features' },
+  { source:'best-dam-software-for-video',     target:'video-asset-management' },
+  { source:'blog-digital-asset-management-integration', target:'best-creative-operations-tools' },
+  { source:'blog-digital-asset-management-integration', target:'best-dam-software-for-video' },
+  { source:'blog-digital-asset-management-integration', target:'digital-asset-management-features' },
+  { source:'bynder-alternatives',             target:'air-pricing-model-problems-dtc-brands' },
+  { source:'creative-operations',             target:'best-creative-operations-tools' },
+  { source:'digital-asset-management-agencies', target:'best-dam-software-for-video' },
+  { source:'digital-asset-management-benefits', target:'best-dam-software-for-video' },
+  { source:'digital-asset-management-features', target:'12-must-have-dam-features-for-video-ad-production' },
+  { source:'digital-asset-management-features', target:'best-dam-software-for-video' },
+  { source:'digital-asset-management-features', target:'why-recharm-is-better-than-air-for-ad-creative-teams' },
+  { source:'frame-io-alternatives',           target:'how-to-scale-online-advertising' },
+  { source:'how-to-scale-online-advertising', target:'12-must-have-dam-features-for-video-ad-production' },
+  { source:'how-to-scale-online-advertising', target:'creative-operations' },
+  { source:'how-to-scale-online-advertising', target:'what-is-andromeda-and-creative-similarity' },
+  { source:'how-to-scale-online-advertising', target:'why-recharm-is-better-than-air-for-ad-creative-teams' },
+  { source:'metadata-tagging',               target:'what-is-andromeda-and-creative-similarity' },
+  { source:'successful-ad-creative-team',    target:'2-1-winning-ads-are-a-perishable-opportunity' },
+  { source:'successful-ad-creative-team',    target:'6-steps-to-bringing-paid-creative-in-house' },
+  { source:'video-asset-management',         target:'2-1-winning-ads-are-a-perishable-opportunity' },
+
+  // Blog → site pages (24 new)
+  { source:'3-reasons-why-hook-iterations-video-ads',           target:'/solutions/hire-video-editors-by-trials' },
+  { source:'6-steps-to-bringing-paid-creative-in-house',        target:'/features/footage-organization' },
+  { source:'8-reasons-your-creative-brief-process-is-slowing-down-ad-production', target:'/solutions/creative-brief-workflow' },
+  { source:'best-creative-operations-tools',                    target:'/solutions/creative-brief-workflow' },
+  { source:'best-dam-fashion-apparel',                          target:'/features/ai-tagging' },
+  { source:'best-dam-software-for-video',                       target:'/features/ai-tagging' },
+  { source:'blog-digital-asset-management-integration',         target:'/compare/google-drive-alternative' },
+  { source:'digital-asset-management-agencies',                 target:'/features/creator-tagging' },
+  { source:'digital-asset-management-agencies',                 target:'/features/visual-search' },
+  { source:'digital-asset-management-benefits',                 target:'/features/ai-tagging' },
+  { source:'digital-asset-management-benefits',                 target:'/features/footage-organization' },
+  { source:'digital-asset-management-benefits',                 target:'/features/visual-search' },
+  { source:'digital-asset-management-features',                 target:'/features/ai-tagging' },
+  { source:'digital-asset-management-features',                 target:'/features/usage-rights' },
+  { source:'digital-asset-management-features',                 target:'/solutions/creative-brief-workflow' },
+  { source:'frame-io-alternatives',                             target:'/features/ai-tagging' },
+  { source:'frame-io-alternatives',                             target:'/features/footage-organization' },
+  { source:'metadata-tagging',                                  target:'/features/ai-tagging' },
+  { source:'metadata-tagging',                                  target:'/features/visual-search' },
+  { source:'metadata-tagging',                                  target:'/solutions/creative-brief-workflow' },
+  { source:'successful-ad-creative-team',                       target:'/solutions/empower-video-editors' },
+  { source:'why-recharm-is-better-than-air-for-ad-creative-teams', target:'/compare/air-alternative' },
+  { source:'why-recharm-is-better-than-air-for-ad-creative-teams', target:'/solutions/creative-brief-workflow' },
+  { source:'why-recharm-is-better-than-air-for-ad-creative-teams', target:'/solutions/onboard-video-editors-instantly' },
+];
+
+// ── Degree computation ────────────────────────────────────────────────────
+const nodeMap = new Map(nodesData.map(n => [n.id, n]));
+const inDeg = {}, outDeg = {};
+nodesData.forEach(n => { inDeg[n.id] = 0; outDeg[n.id] = 0; });
+linksData.forEach(l => { inDeg[l.target] = (inDeg[l.target]||0)+1; outDeg[l.source] = (outDeg[l.source]||0)+1; });
+
+const topHub = nodesData.reduce((a,b) => (inDeg[a.id]||0) >= (inDeg[b.id]||0) ? a : b);
+document.getElementById('hub-lbl').textContent = topHub.label;
+
+const nodeColor = n => n.type === 'page' ? PAGE_CATS[n.cat] : BLOG_CATS[n.cat];
+const nodeRadius = d => {
+  if (d.type === 'page') return 10;
+  return Math.min(18, 7 + (inDeg[d.id]||0) * 1.8);
+};
+
+// ── D3 setup ──────────────────────────────────────────────────────────────
+const W = 960, H = 720;
+const svg  = d3.select('#g');
+const defs = svg.append('defs');
+
+defs.append('marker')
+  .attr('id','arr').attr('viewBox','0 0 10 10').attr('refX',9).attr('refY',5)
+  .attr('markerWidth',5).attr('markerHeight',5).attr('orient','auto-start-reverse')
+  .append('path').attr('d','M2 1L8 5L2 9')
+  .attr('fill','none').attr('stroke','context-stroke')
+  .attr('stroke-width',1.5).attr('stroke-linecap','round').attr('stroke-linejoin','round');
+
+const zoom = d3.zoom().scaleExtent([0.2,4]).on('zoom', e => g.attr('transform', e.transform));
+svg.call(zoom);
+const g = svg.append('g');
+
+function resetZoom() { svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(W/2, H/2).scale(0.7).translate(-W/2,-H/2)); }
+function reheat() { sim.alpha(0.5).restart(); }
+window.resetZoom = resetZoom;
+window.reheat = reheat;
+
+// ── Simulation ────────────────────────────────────────────────────────────
+const sim = d3.forceSimulation(nodesData)
+  .force('link',    d3.forceLink(linksData).id(d=>d.id).distance(d => d.target.type==='page' ? 90 : 105).strength(0.5))
+  .force('charge',  d3.forceManyBody().strength(-380))
+  .force('center',  d3.forceCenter(W/2, H/2))
+  .force('collide', d3.forceCollide().radius(d => nodeRadius(d)+26).strength(0.85));
+
+// ── Links ─────────────────────────────────────────────────────────────────
+const link = g.append('g').selectAll('line').data(linksData).join('line')
+  .attr('fill','none')
+  .attr('stroke-width', d => nodeMap.get(d.target)?.type === 'page' ? 1.4 : 1)
+  .attr('stroke-opacity', 0.55)
+  .attr('stroke-dasharray', d => nodeMap.get(d.target)?.type === 'page' ? '5 3' : 'none')
+  .attr('marker-end','url(#arr)');
+
+// ── Nodes ─────────────────────────────────────────────────────────────────
+const node = g.append('g').selectAll('g').data(nodesData).join('g').style('cursor','pointer')
+  .call(d3.drag()
+    .on('start',(e,d)=>{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+    .on('drag',(e,d)=>{ d.fx=e.x; d.fy=e.y; })
+    .on('end',(e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+
+// Circles for blogs, rounded squares for site pages
+node.each(function(d) {
+  const el = d3.select(this);
+  const r  = nodeRadius(d);
+  if (d.type === 'blog') {
+    el.append('circle')
+      .attr('r', r)
+      .attr('fill', nodeColor(d))
+      .attr('stroke','#fff').attr('stroke-width', 2);
+  } else {
+    const s = r * 1.9;
+    el.append('rect')
+      .attr('x', -s/2).attr('y', -s/2)
+      .attr('width', s).attr('height', s)
+      .attr('rx', 4)
+      .attr('fill', nodeColor(d))
+      .attr('stroke','#fff').attr('stroke-width', 2);
+  }
+});
+
+node.append('text')
+  .attr('text-anchor','middle').attr('dominant-baseline','hanging')
+  .attr('font-size','10px').attr('font-family','sans-serif')
+  .attr('fill','#444441').attr('pointer-events','none')
+  .attr('dy', d => nodeRadius(d) + (d.type === 'page' ? 5 : 4))
+  .text(d => d.label);
+
+// ── Tooltip ───────────────────────────────────────────────────────────────
+const tt      = document.getElementById('tt');
+const wrapper = document.getElementById('wrapper');
+
+node.on('mouseenter', (e, d) => {
+  const isOrphan = inDeg[d.id] === 0 && outDeg[d.id] === 0;
+  const path     = d.type === 'page' ? d.id : '/blog/' + d.id;
+  const typeTag  = d.type === 'page'
+    ? `<span style="background:${nodeColor(d)};color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;font-weight:500">${d.cat.toUpperCase()}</span>`
+    : `<span style="background:${nodeColor(d)};color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;font-weight:500">BLOG · ${d.cat.toUpperCase()}</span>`;
+
+  tt.innerHTML = `
+    ${typeTag}<br>
+    <span style="font-weight:500;font-size:12px">${d.label}</span>
+    ${isOrphan ? '<br><span style="color:#D85A30;font-size:10px">⚠ No internal links at all</span>' : ''}
+    ${d.type === 'page' && outDeg[d.id] === 0 ? '<br><span style="color:#888;font-size:10px">↳ Sink page — receives links only</span>' : ''}
+    <br><span style="color:#888;font-size:10px">${path}</span>
+    <br><span style="font-size:10px;color:#5f5e5a">← in: <b>${inDeg[d.id]||0}</b> &nbsp; out: <b>${outDeg[d.id]||0}</b> →</span>
+  `;
+  tt.style.display = 'block';
+})
+.on('mousemove', e => {
+  const wr = wrapper.getBoundingClientRect();
+  let x = e.clientX - wr.left + 14;
+  let y = e.clientY - wr.top - 55;
+  if (x + 260 > wr.width)  x = e.clientX - wr.left - 270;
+  if (y < 0)               y = 4;
+  tt.style.left = x + 'px';
+  tt.style.top  = y + 'px';
+})
+.on('mouseleave', () => { tt.style.display = 'none'; });
+
+// ── Tick ──────────────────────────────────────────────────────────────────
+sim.on('tick', () => {
+  link
+    .attr('stroke', d => nodeColor(nodeMap.get(d.source.id || d.source)))
+    .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+    .attr('x2', d => {
+      const r  = nodeRadius(d.target);
+      const s  = d.target.type === 'page' ? r * 1.9 / 2 : r;
+      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+      const dist = Math.sqrt(dx*dx+dy*dy)||1;
+      return d.target.x - (dx/dist)*(s+8);
+    })
+    .attr('y2', d => {
+      const r  = nodeRadius(d.target);
+      const s  = d.target.type === 'page' ? r * 1.9 / 2 : r;
+      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+      const dist = Math.sqrt(dx*dx+dy*dy)||1;
+      return d.target.y - (dy/dist)*(s+8);
+    });
+  node.attr('transform', d => `translate(${d.x},${d.y})`);
+});
+
+// ── Filter controls ───────────────────────────────────────────────────────
+function applyFilters() {
+  const showBlog     = document.getElementById('chk-blogs').checked;
+  const showFeatures = document.getElementById('chk-features').checked;
+  const showCompare  = document.getElementById('chk-compare').checked;
+  const showSolutions= document.getElementById('chk-solutions').checked;
+
+  const visible = new Set(nodesData
+    .filter(n => {
+      if (n.type === 'blog')                 return showBlog;
+      if (n.cat  === 'features')             return showFeatures;
+      if (n.cat  === 'compare')              return showCompare;
+      if (n.cat  === 'solutions')            return showSolutions;
+      return true;
+    })
+    .map(n => n.id));
+
+  node.attr('opacity', d => visible.has(d.id) ? 1 : 0.08);
+  link.attr('opacity', d => {
+    const sid = d.source.id || d.source;
+    const tid = d.target.id || d.target;
+    return (visible.has(sid) && visible.has(tid)) ? 0.55 : 0.04;
+  });
+}
+
+['chk-blogs','chk-features','chk-compare','chk-solutions'].forEach(id => {
+  document.getElementById(id).addEventListener('change', applyFilters);
+});
+</script>
+</body>
+</html>
